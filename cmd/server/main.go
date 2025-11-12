@@ -4,8 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"github.com/piwi3910/k8s/pkg/server"
 	"github.com/piwi3910/k8s/pkg/version"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -13,10 +16,22 @@ var (
 	configFile  = flag.String("config", "/etc/k8s/config.yaml", "Path to configuration file")
 	dataDir     = flag.String("data-dir", "/var/lib/k8s", "Path to data directory")
 	serverMode  = flag.String("server-mode", "single", "Server mode: single (SQLite) or ha (etcd)")
+	logLevel    = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 )
 
 func main() {
 	flag.Parse()
+
+	// Configure logging
+	level, err := logrus.ParseLevel(*logLevel)
+	if err != nil {
+		logrus.Warnf("Invalid log level '%s', defaulting to info", *logLevel)
+		level = logrus.InfoLevel
+	}
+	logrus.SetLevel(level)
+	logrus.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp: true,
+	})
 
 	// Show version and exit if requested
 	if *showVersion {
@@ -25,34 +40,63 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Print banner
+	printBanner()
+
 	// Validate server mode
-	if *serverMode != "single" && *serverMode != "ha" {
-		fmt.Fprintf(os.Stderr, "Error: invalid server mode '%s'. Must be 'single' or 'ha'\n", *serverMode)
-		os.Exit(1)
+	mode := server.ServerMode(*serverMode)
+	if mode != server.ModeSingle && mode != server.ModeHA {
+		logrus.Fatalf("Invalid server mode '%s'. Must be 'single' or 'ha'", *serverMode)
 	}
 
-	fmt.Printf("Starting Lightweight Kubernetes Distribution\n")
-	fmt.Printf("Version: %s\n", version.GitVersion)
-	fmt.Printf("Mode: %s\n", *serverMode)
-	fmt.Printf("Data Directory: %s\n", *dataDir)
-	fmt.Printf("Config File: %s\n", *configFile)
-	fmt.Println()
+	// Create data directory if it doesn't exist
+	if err := os.MkdirAll(*dataDir, 0755); err != nil {
+		logrus.Fatalf("Failed to create data directory: %v", err)
+	}
 
-	// TODO: Initialize server components
-	// This is where we'll integrate:
-	// - Kine (SQLite backend for single mode)
-	// - etcd client (for HA mode)
-	// - Kubernetes API server
-	// - Controller manager
-	// - Scheduler
-	// - Kubelet
-	// - Kube-proxy
+	// Build server configuration
+	config := &server.Config{
+		Mode:       mode,
+		DataDir:    *dataDir,
+		ConfigFile: *configFile,
+	}
 
-	fmt.Println("Server initialization not yet implemented.")
-	fmt.Println("Next steps:")
-	fmt.Println("  1. Integrate Kine for SQLite backend")
-	fmt.Println("  2. Set up Kubernetes API server")
-	fmt.Println("  3. Configure controller manager and scheduler")
-	fmt.Println("  4. Implement kubelet and kube-proxy")
-	fmt.Println("  5. Add service orchestration")
+	// Set storage endpoint based on mode
+	if mode == server.ModeSingle {
+		// SQLite database path
+		config.StorageEndpoint = fmt.Sprintf("sqlite://%s/db/state.db", *dataDir)
+		// Ensure db directory exists
+		dbDir := filepath.Join(*dataDir, "db")
+		if err := os.MkdirAll(dbDir, 0755); err != nil {
+			logrus.Fatalf("Failed to create database directory: %v", err)
+		}
+	} else {
+		// etcd endpoint (default to localhost, can be overridden via config)
+		config.StorageEndpoint = "http://127.0.0.1:2379"
+	}
+
+	// Create and run server
+	srv, err := server.New(config)
+	if err != nil {
+		logrus.Fatalf("Failed to create server: %v", err)
+	}
+
+	logrus.Info("Lightweight Kubernetes Distribution")
+	logrus.Infof("Version: %s", version.GitVersion)
+	logrus.Infof("Kubernetes: %s", version.K8sVersion)
+	logrus.Infof("Mode: %s", mode)
+
+	if err := srv.Run(); err != nil {
+		logrus.Fatalf("Server error: %v", err)
+	}
+}
+
+func printBanner() {
+	banner := `
+╔═══════════════════════════════════════════════════════════════╗
+║   Lightweight Kubernetes Distribution                        ║
+║   Minimal K8s for Edge Computing                             ║
+╚═══════════════════════════════════════════════════════════════╝
+`
+	fmt.Println(banner)
 }

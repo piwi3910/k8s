@@ -20,9 +20,12 @@ This is a lightweight Kubernetes distribution similar to k3s, designed to run Ku
 .
 ├── cmd/
 │   └── server/          # Main application entry point
+│       └── main.go          # CLI and server startup
 ├── pkg/
 │   ├── version/         # Version information
-│   └── sqlite/          # SQLite backend integration (future)
+│   │   └── version.go       # Build-time metadata
+│   └── server/          # Server orchestration
+│       └── server.go        # Component lifecycle management
 ├── scripts/             # Build and helper scripts
 │   ├── download-k8s.sh      # Downloads Kubernetes sources
 │   ├── download-kine.sh     # Downloads Kine (SQLite backend)
@@ -34,12 +37,14 @@ This is a lightweight Kubernetes distribution similar to k3s, designed to run Ku
 ├── manifests/           # Systemd service files
 │   ├── k8s.service          # Main service definition
 │   └── k8s.env.example      # Environment variables
+├── docs/                # Documentation
+│   └── cloud-provider-removal.md  # Cloud provider removal strategy
 ├── build/               # Build artifacts (gitignored)
-│   ├── kubernetes/          # Downloaded K8s sources
-│   ├── kine/                # Downloaded Kine sources
+│   ├── kubernetes/          # Downloaded K8s sources (320 MB)
+│   ├── kine/                # Downloaded Kine sources (800 KB)
 │   └── data/                # Generated data
 └── dist/                # Distribution artifacts (gitignored)
-    └── artifacts/           # Compiled binaries
+    └── artifacts/           # Compiled binaries (~2 MB currently)
 ```
 
 ### Build Process Flow
@@ -301,17 +306,91 @@ sudo /usr/local/bin/k8s --version
 - **Make**: Build orchestration
 - **systemd**: Service management (Linux)
 
+## Server Architecture
+
+### Component Integration
+
+The server is designed to run all Kubernetes components in a single process:
+
+**Server Package** (`pkg/server/`)
+- `server.go` - Main server orchestration
+- Manages component lifecycle
+- Handles graceful shutdown
+- Coordinates storage backend
+
+**Main Entry Point** (`cmd/server/main.go`)
+- CLI flag parsing
+- Configuration setup
+- Logging configuration
+- Banner display
+- Server initialization and execution
+
+### Storage Modes
+
+**Single Mode** (default)
+- Uses Kine with SQLite backend
+- Storage path: `${DATA_DIR}/db/state.db`
+- No external dependencies
+- Perfect for edge deployments
+
+**HA Mode**
+- Uses external etcd cluster
+- Default endpoint: `http://127.0.0.1:2379`
+- Suitable for production multi-node clusters
+
+### Component Startup Order
+
+1. Storage backend (Kine or etcd client)
+2. kube-apiserver
+3. kube-controller-manager
+4. kube-scheduler
+5. kubelet
+6. kube-proxy
+
+### Cloud Provider Removal
+
+See [docs/cloud-provider-removal.md](docs/cloud-provider-removal.md) for detailed strategy.
+
+**Approach:**
+- Use Go build tags (`providerless`, `nolegacyproviders`)
+- Remove cloud-specific dependencies
+- Configure components with `--cloud-provider=`
+- Keep CSI interface for storage
+
+## Current Implementation Status
+
+✅ **Completed**
+- Build infrastructure with source download and caching
+- Server orchestration framework
+- Mode selection (single/ha)
+- Logging and configuration
+- Version information system
+- Graceful shutdown handling
+- Directory structure and project organization
+
+🔄 **In Progress**
+- Kine integration for SQLite backend
+- Kubernetes component integration
+- Cloud provider removal via build tags
+
+⏳ **Planned**
+- API server integration
+- Controller manager integration
+- Scheduler integration
+- Kubelet integration
+- Kube-proxy integration
+- End-to-end testing
+- Performance optimization
+
 ## Next Steps
 
-The build infrastructure is in place. Next tasks:
-
-1. Create patches to integrate Kine SQLite backend
-2. Create patches to remove cloud providers
-3. Integrate Kubernetes API server into the binary
-4. Add controller manager and scheduler
-5. Implement kubelet and kube-proxy
-6. Add comprehensive tests
-7. Create installation documentation
+1. Integrate Kine gRPC server for SQLite storage
+2. Import and start kube-apiserver with Kine endpoint
+3. Add controller manager with cloud providers disabled
+4. Integrate scheduler
+5. Add kubelet and kube-proxy
+6. Implement build tags for cloud provider exclusion
+7. Add comprehensive tests
 8. Performance testing and optimization
 
 ## References
