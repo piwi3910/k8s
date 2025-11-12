@@ -1,0 +1,40 @@
+# Build artifacts
+/build/
+/dist/
+*.tar.gz
+*.zip
+
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/k8s
+/k8s-*
+
+# Go
+vendor/
+*.test
+*.out
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Downloaded sources
+/build/kubernetes/
+/build/kine/
+
+# Patches backup
+*.orig
+*.rej
