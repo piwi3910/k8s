@@ -8,6 +8,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/piwi3910/k8s/pkg/storage"
 	"github.com/sirupsen/logrus"
 )
 
@@ -33,10 +34,11 @@ type Config struct {
 
 // Server represents the integrated Kubernetes server
 type Server struct {
-	config *Config
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	config      *Config
+	ctx         context.Context
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
+	kineServer  *storage.KineServer
 }
 
 // New creates a new server instance
@@ -87,16 +89,27 @@ func (s *Server) Run() error {
 
 // startStorage initializes the storage backend (Kine or etcd)
 func (s *Server) startStorage() error {
-	if s.config.Mode == ModeSingle {
-		logrus.Info("Starting Kine SQLite backend...")
-		// TODO: Initialize Kine with SQLite
-		// This will be implemented in the next iteration
-		return nil
+	// Create Kine configuration
+	kineConfig := &storage.KineConfig{
+		DataDir: s.config.DataDir,
+		Mode:    string(s.config.Mode),
 	}
 
-	logrus.Info("Using external etcd cluster...")
-	// TODO: Configure etcd client
-	// This will be implemented in the next iteration
+	// In HA mode, configure etcd servers
+	if s.config.Mode == ModeHA {
+		kineConfig.ETCDServers = []string{s.config.StorageEndpoint}
+	}
+
+	// Create and start Kine server
+	s.kineServer = storage.NewKineServer(kineConfig)
+	if err := s.kineServer.Start(); err != nil {
+		return fmt.Errorf("failed to start storage: %w", err)
+	}
+
+	// Get the storage endpoint for Kubernetes components
+	endpoint := s.kineServer.Endpoint()
+	logrus.Infof("Storage endpoint ready: %s", endpoint)
+
 	return nil
 }
 
@@ -173,6 +186,14 @@ func (s *Server) startKubeProxy() error {
 func (s *Server) Shutdown() {
 	logrus.Info("Shutting down server...")
 	s.cancel()
+
+	// Stop Kine if running
+	if s.kineServer != nil {
+		if err := s.kineServer.Stop(); err != nil {
+			logrus.Errorf("Error stopping Kine: %v", err)
+		}
+	}
+
 	s.wg.Wait()
 	logrus.Info("Server stopped")
 }

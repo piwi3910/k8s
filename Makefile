@@ -81,14 +81,14 @@ test:
 # Build: Compile the binary
 build: generate deps
 	@echo "Building $(BINARY_NAME)..."
-	@CGO_ENABLED=0 go build $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY_NAME) ./cmd/server
+	@CGO_ENABLED=1 go build $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY_NAME) ./cmd/server
 	@echo "Binary created at $(DIST_DIR)/$(BINARY_NAME)"
 	@$(DIST_DIR)/$(BINARY_NAME) --version
 
 # Build without validation (for development)
 build-fast:
 	@echo "Building $(BINARY_NAME) (fast mode, no validation)..."
-	@CGO_ENABLED=0 go build $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY_NAME) ./cmd/server
+	@CGO_ENABLED=1 go build $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY_NAME) ./cmd/server
 
 # Install: Install the binary to /usr/local/bin
 install: build
